@@ -6,6 +6,8 @@ const app = express();
 
 // allows apps from different ports to communicate with the server
 app.use(cors());
+// this is to make express shwo our front end production build
+app.use(express.static('build'))
 // we need this to parse JSON data in post requests
 app.use(express.json())
 
