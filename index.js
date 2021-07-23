@@ -1,8 +1,13 @@
-const { response } = require('express');
+/*
+It's important that dotenv gets imported before the person model is imported. This ensures that the environment variables from the .env file are available globally before the code from the other modules is imported.
+*/
+// this is to use env variables in .env file
+require('dotenv').config()
 const express = require('express');
 const morgan = require('morgan')
 const cors = require('cors');
 const app = express();
+const Person = require('./models/person')
 
 // allows apps from different ports to communicate with the server
 app.use(cors());
@@ -43,8 +48,11 @@ let persons = [
 ]
 
 app.get('/api/persons', (request, response) => {
-	// send persons in json format
-	response.json(persons);
+	// search the database for all Person documents
+	Person.find({}).then(people => {
+		// send persons in json format
+		response.json(people);
+	})
 })
 
 app.get('/info', (request, response) => {
@@ -58,15 +66,19 @@ app.get('/info', (request, response) => {
 })
 // id is a param
 app.get('/api/persons/:id', (request, response) => {
-	const id = Number(request.params.id)
-	// returns undefined if not found
-	const person = persons.find(person => person.id === id);
-	if (person) {
+	// const id = Number(request.params.id)
+	// // returns undefined if not found
+	// const person = persons.find(person => person.id === id);
+	// if (person) {
+	// 	response.json(person);
+	// } else {
+	// 	// 404 not found
+	// 	response.status(404).end()
+	// }
+
+	Person.findById(request.params.id).then(person => {
 		response.json(person);
-	} else {
-		// 404 not found
-		response.status(404).end()
-	}
+	})
 })
 
 app.delete('/api/persons/:id', (req, res) => {
@@ -77,33 +89,45 @@ app.delete('/api/persons/:id', (req, res) => {
 })
 
 app.post('/api/persons', (req, res) => {
-	// the data that is posted is stored in the request's body
+	// CODE BEFORE MONGODB WAS ADDED
+		// // the data that is posted is stored in the request's body
+		// const body = req.body;
+		// if (!(body.name && body.number)) {
+		// 	// we return so we exit the function and send the error code
+		// 	return res.status(400).json(
+		// 		{ error: 'person requires name and number' }
+		// 	)
+		// }
+		// const existingPerson = persons.find(person => person.name === body.name);
+		// if (existingPerson) {
+		// 	return res.status(400).json(
+		// 		{ error: 'person with this name already exists' }
+		// 	)
+		// }
+		// // console.log(body);
+		// const person = {
+		// 	// generate random id
+		// 	'id': Math.floor(Math.random() * 9999999),
+		// 	'name': body.name,
+		// 	'number': body.number
+		// };
+		// persons = persons.concat(person);
+		// // send back the posted person in json format
+		// res.json(person)
 	const body = req.body;
-	if (!(body.name && body.number)) {
-		// we return so we exit the function and send the error code
-		return res.status(400).json(
-			{ error: 'person requires name and number' }
-		)
-	}
-	const existingPerson = persons.find(person => person.name === body.name);
-	if (existingPerson) {
-		return res.status(400).json(
-			{error: 'person with this name already exists'}
-		)
-	}
-	// console.log(body);
-	const person = {
-		// generate random id
-		'id': Math.floor(Math.random() * 9999999),
-		'name': body.name,
-		'number': body.number
-	};
-	persons = persons.concat(person);
-	// send back the posted person in json format
-	res.json(person)
+
+	// make new person document
+	const person = new Person({
+		name: body.name,
+		number: body.number
+	});
+	// save the new person to the database
+	person.save().then(savedPerson => {
+		res.json(savedPerson);
+	});
 })
 
-const PORT = process.env.PORT || 3001;
+const PORT = process.env.PORT;
 app.listen(PORT, () => {
 	console.log(`Server running on port ${PORT}`)
 });
