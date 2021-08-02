@@ -7,6 +7,7 @@ const express = require('express');
 const morgan = require('morgan')
 const cors = require('cors');
 const app = express();
+// mongoose model
 const Person = require('./models/person')
 
 // allows apps from different ports to communicate with the server
@@ -23,6 +24,23 @@ morgan.token('post', (req, res) => {
 })
 // morgan will log to the console requests that are made
 app.use(morgan(':method :url :status :res[content-length] - :response-time ms :post'))
+
+// error handling middleware, more info in google doc
+const errorHandler = (error, request, response, next) => {
+	/*
+	The error handler checks if the error is a CastError exception, in which case we know that the error was caused by an invalid object id for Mongo. In this situation the error handler will send a response to the browser with the response object passed as a parameter. In all other error situations, the middleware passes the error forward to the default Express error handler. */
+	console.log(error);
+
+	if (error.name === 'CastError') {
+		return response.status(400).send({ error: 'malformatted id' });
+	} else if (error.name === 'ValidationError') {
+		return response.status(400).json({error: error.message})
+	}
+	next(error);
+}
+
+// errorHandler has to be the last middleware
+app.use(errorHandler);
 
 let persons = [
 	{
@@ -47,12 +65,13 @@ let persons = [
 	}
 ]
 
-app.get('/api/persons', (request, response) => {
+app.get('/api/persons', (request, response, next) => {
 	// search the database for all Person documents
 	Person.find({}).then(people => {
 		// send persons in json format
 		response.json(people);
 	})
+	.catch(error => next(error))
 })
 
 app.get('/info', (request, response) => {
@@ -65,7 +84,7 @@ app.get('/info', (request, response) => {
 	)
 })
 // id is a param
-app.get('/api/persons/:id', (request, response) => {
+app.get('/api/persons/:id', (request, response, next) => {
 	// const id = Number(request.params.id)
 	// // returns undefined if not found
 	// const person = persons.find(person => person.id === id);
@@ -77,43 +96,57 @@ app.get('/api/persons/:id', (request, response) => {
 	// }
 
 	Person.findById(request.params.id).then(person => {
-		response.json(person);
+		// if we find person in database, send as json
+		if (person) {
+			response.json(person);
+			// if we cant find person send 404 not found
+		} else {
+			response.status(404).end();
+		}
 	})
+		// if other error send to middleware error handler
+		.catch(error => next(error))
 })
 
-app.delete('/api/persons/:id', (req, res) => {
-	const id = Number(req.params.id)
-	// identify the id and remove them from the data array
-	persons = persons.filter(person => person.id !== id);
-	res.status(204).end()
+app.delete('/api/persons/:id', (req, res, next) => {
+	// BEFORE DATABASE
+	// const id = Number(req.params.id)
+	// // identify the id and remove them from the data array
+	// persons = persons.filter(person => person.id !== id);
+	// res.status(204).end()
+	Person.findByIdAndRemove(req.params.id)
+		.then(result => {
+			res.status(204).end();
+		})
+		.catch(error => next(error));
 })
 
-app.post('/api/persons', (req, res) => {
+app.post('/api/persons', (req, res, next) => {
 	// CODE BEFORE MONGODB WAS ADDED
-		// // the data that is posted is stored in the request's body
-		// const body = req.body;
-		// if (!(body.name && body.number)) {
-		// 	// we return so we exit the function and send the error code
-		// 	return res.status(400).json(
-		// 		{ error: 'person requires name and number' }
-		// 	)
-		// }
-		// const existingPerson = persons.find(person => person.name === body.name);
-		// if (existingPerson) {
-		// 	return res.status(400).json(
-		// 		{ error: 'person with this name already exists' }
-		// 	)
-		// }
-		// // console.log(body);
-		// const person = {
-		// 	// generate random id
-		// 	'id': Math.floor(Math.random() * 9999999),
-		// 	'name': body.name,
-		// 	'number': body.number
-		// };
-		// persons = persons.concat(person);
-		// // send back the posted person in json format
-		// res.json(person)
+	// // the data that is posted is stored in the request's body
+	// const body = req.body;
+	// if (!(body.name && body.number)) {
+	// 	// we return so we exit the function and send the error code
+	// 	return res.status(400).json(
+	// 		{ error: 'person requires name and number' }
+	// 	)
+	// }
+	// const existingPerson = persons.find(person => person.name === body.name);
+	// if (existingPerson) {
+	// 	return res.status(400).json(
+	// 		{ error: 'person with this name already exists' }
+	// 	)
+	// }
+	// // console.log(body);
+	// const person = {
+	// 	// generate random id
+	// 	'id': Math.floor(Math.random() * 9999999),
+	// 	'name': body.name,
+	// 	'number': body.number
+	// };
+	// persons = persons.concat(person);
+	// // send back the posted person in json format
+	// res.json(person)
 	const body = req.body;
 
 	// make new person document
@@ -124,7 +157,26 @@ app.post('/api/persons', (req, res) => {
 	// save the new person to the database
 	person.save().then(savedPerson => {
 		res.json(savedPerson);
-	});
+	})
+	.catch(error => next(error))
+})
+
+app.put('/api/persons/:id', (req, res, next) => {
+	/*Notice that the findByIdAndUpdate method receives a regular JavaScript object as its parameter, and not a new note object created with the Note constructor function.
+
+	There is one important detail regarding the use of the findByIdAndUpdate method. By default, the updatedNote parameter of the event handler receives the original document without the modifications. We added the optional { new: true }parameter, which will cause our event handler to be called with the new modified document instead of the original. */
+	const body = req.body;
+
+	const person = {
+		name: body.name,
+		number: body.number
+	}
+
+	Person.findByIdAndUpdate(req.params.id, person, {new: true})
+		.then(updatedPerson => {
+			res.json(updatedPerson);
+		})
+		.catch(error => next(error));
 })
 
 const PORT = process.env.PORT;
